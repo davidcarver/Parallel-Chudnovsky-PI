@@ -11,7 +11,7 @@
    Daisuke Takahashi, Mitsuhisa Sato, and Taisuke Boku.  
 
    For gcc 4.3 or later
-   gcc -fopenmp -Wall -O2 -o raspberry-pi2 raspberry-pi2.c -lgmp -lm
+   gcc -Wall -O2 -fopenmp raspberry-pi2 raspberry-pi2.c -lgmp -lm
 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:

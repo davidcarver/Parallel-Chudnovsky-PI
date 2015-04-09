@@ -12,7 +12,7 @@
    to demonstrate a parallel version of the gmp-chudnovsky program using Cilkplus.
 
    For gcc 5.0 or later
-   gcc -fcilkplus -Wall -O2 -o raspberry-pi2 raspberry-pi2.c -lgmp -lm
+   gcc -Wall -O2 -fcilkplus -o raspberry-pi2 raspberry-pi2.c -lgmp -lm
 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -159,7 +159,7 @@ main(int argc,char *argv[])
 {
   mpf_t  pi, qi, ci;
   long int d=100, terms, i, j, k, cores_size;
-  unsigned long psize, qsize, mid, rc;
+  unsigned long psize, qsize, mid;
   double begin, mid0, mid1, mid3, mid4, end;
   double wbegin, wmid0, wmid1, wmid3, wmid4, wend;
 
@@ -204,7 +204,7 @@ main(int argc,char *argv[])
     cores_depth++;
   cores_size=pow(2,cores_depth);
 
-  fprintf(stderr,"#terms=%ld, depth=%ld, threads=%ld cores=%d\n", terms, depth, __cilkrts_get_nworkers(), get_nprocs());
+  fprintf(stderr,"#terms=%ld, depth=%ld, threads=%d cores=%d\n", terms, depth, __cilkrts_get_nworkers(), get_nprocs());
 
   begin = cpu_time();
   wbegin = wall_clock();

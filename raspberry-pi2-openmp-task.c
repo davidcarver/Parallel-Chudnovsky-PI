@@ -168,7 +168,8 @@ bs(unsigned long a,unsigned long b,unsigned long level,mpz_t pstack1,mpz_t qstac
       mid = a+(b-a)*0.5224;     /* tuning parameter */
 
 #ifdef _OPENMP
-      #pragma omp task firstprivate(mid,a) shared(pstack1,qstack1,gstack1) if (level < 4) 
+  //    #pragma omp task firstprivate(mid,a) shared(pstack1,qstack1,gstack1) if (level < 4) 
+      #pragma omp task firstprivate(mid,a) shared(pstack1,qstack1,gstack1)  
          bs(a,mid,level+1,pstack1,qstack1,gstack1);
 
       // #pragma omp task firstprivate(mid,b) shared(pstack2,qstack2,gstack2)
