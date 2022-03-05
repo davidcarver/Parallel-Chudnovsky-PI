@@ -61,6 +61,10 @@
 #define DIGITS_PER_ITER  14.1816474627254776555
 #define DOUBLE_PREC      53
 
+#if defined(__GNUC__) && !defined(__clang__) && !defined(__INTEL_COMPILER)
+# define GCC_COMPILER 1
+#endif
+
 long terms;
 char *prog_name;
 
@@ -245,8 +249,16 @@ main(int argc,char *argv[])
     threads = atoi(argv[3]);
 
   cores=omp_get_num_procs();
-  omp_set_nested(1);
-  omp_set_dynamic(0);
+  int t_dynamic = 0;
+  t_dynamic = omp_get_dynamic();
+  omp_set_dynamic(t_dynamic);
+  #if GCC_COMPILER
+    int t_nested = omp_get_nested();
+    omp_set_nested(t_nested);
+  #endif
+  int t_levels = 3;
+  t_levels = omp_get_max_active_levels();
+  omp_set_max_active_levels(t_levels);
 
   terms = d/DIGITS_PER_ITER;
   depth = 0;
