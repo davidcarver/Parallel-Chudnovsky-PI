@@ -21,5 +21,10 @@ Build (gcc 4.3 or later)
  * To compile using gcc with Cilkplus 
    gcc -fcilkplus -Wall -O2 -o raspberry-pi2-cilk raspberry-pi2-cilk.c -lgmp -lm
 
+Build (clang/llvm 3.7 or later)
 
+ * To compile using clang/llvm with OpenMP
+   clang -fopenmp -o raspberry-pi2-openmp raspberry-pi2-openmp.c -lgmp -lm
 
+ * To compile using clang/llvm with Cilkplus
+   clang -fcilkplus -Wall -O2 -o raspberry-pi2-cilk raspberry-pi2-cilk.c -lgmp -lm
