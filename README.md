@@ -13,7 +13,6 @@ Files
                                         https://gmplib.org/list-archives/gmp-discuss/2008-October/003419.html)
   * pgmp-chudnovsky-2008-November.c     My second version With Hanhong Xue's factorization optimization using OpenMP "
                                         for loop" https://gmplib.org/list-archives/gmp-discuss/2008-November/003444.html)
-  * pgmp-chudnovsky-task.c              Experimental recursive version using OpenMP "task" pragma)
   * pgmp-chudnovsky-factoring-task.c    Experimental with Hanhong Xue's factorization optimization using OpenMP "task" pragma)
 
 Build (gcc 4.3 or later)
