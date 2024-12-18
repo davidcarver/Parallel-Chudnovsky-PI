@@ -6,9 +6,10 @@
    more than 2G digits to be computed.
 
  * Modifed 2008, 2020 by David Carver (dcarver at tacc dot utexas dot edu) to enable
-   multi-threading using the algorithm from "Computation of High-Precision 
+   multi-threading using the algorithm from "Fast multiprecision evaluation of series of 
+   rational numbers" by Bruno Haible Thomas Papanikolaou; and "Computation of High-Precision 
    Mathematical Constants in a Combined Cluster and Grid Environment" by 
-   Daisuke Takahashi, Mitsuhisa Sato, and Taisuke Boku.  
+   Daisuke Takahashi, Mitsuhisa Sato, and Taisuke Boku.
 
  * Updated to simpilfy OpenMP and improve performance; and incorperate some excellent
    ideas Mario Roy implementation at https://github.com/marioroy/Chudnovsky-Pi. 
