@@ -7,8 +7,9 @@
 
  * Modified 2010, 2020 by David Carver (dcarver at tacc dot utexas dot edu) to 
    demonstrate a parallel and fully recursive version of the gmp-chudnovsky; 
-   to simpilfy OpenMP and improve performance; and incorperate some excellent
-   ideas Mario Roy implementation at https://github.com/marioroy/Chudnovsky-Pi. 
+   to simpilfy OpenMP and improve performance; and incorperate excellent
+   ideas for nested parallelism from Mario Roy implementation at 
+   https://github.com/marioroy/Chudnovsky-Pi. 
 
    To compile:
    gcc -Wall -fopenmp -O2 -o pgmp-chudnovsky pgmp-chudnovsky.c -lgmp -lm
@@ -61,7 +62,7 @@
 #define DOUBLE_PREC      53
 
 char *prog_name;
-long d=100, out=0, cutoff=1000, threads=1;
+long d=100, out=0, cutoff=1000, threads=1, maxlevel=32;
 
 ////////////////////////////////////////////////////////////////////////////
 
@@ -423,7 +424,7 @@ bs(unsigned long a, unsigned long b, long gflag, long level,
 
     mid = a+(b-a)*0.5224;     /* tuning parameter */
 
-    if ((b-a) < cutoff)
+    if (((b-a) < cutoff) || (level > maxlevel))
     {
       bs(a, mid, 1, level+1, pstack1, qstack1, gstack1, fpstack1, fgstack1);
       bs(mid, b, gflag, level+1, pstack2, qstack2, gstack2, fpstack2, fgstack2);
@@ -446,7 +447,7 @@ bs(unsigned long a, unsigned long b, long gflag, long level,
       fac_remove_gcd(pstack2, fpstack2, gstack1, fgstack1);
     }
 
-    if ((b-a) < cutoff)
+    if (((b-a) < cutoff) || (level > maxlevel))
     {
        mpz_mul(pstack1, pstack1, pstack2);
        mpz_mul(qstack1, qstack1, pstack2);
@@ -505,6 +506,7 @@ main(int argc, char *argv[])
     fprintf(stderr, "               2 - debug\n");
     fprintf(stderr, "      <threads> number of threads (default 1)\n");
     fprintf(stderr, "      <cutoff> cutoff for recursion (default 1000)\n");
+    fprintf(stderr, "      <maxlevel> max levels for omp recursion (default 32)\n");
     exit(1);
   }
   if (argc>1)
@@ -515,6 +517,8 @@ main(int argc, char *argv[])
     threads = atoi(argv[3]);
   if (argc>4)
     cutoff = atoi(argv[4]);
+  if (argc>5)
+    maxlevel = atoi(argv[5]);
 
   cores=omp_get_num_procs();
   omp_set_nested(1);
@@ -526,6 +530,10 @@ main(int argc, char *argv[])
     depth++;
   depth++;
 
+  fprintf(stderr, "#terms=%ld, depth=%ld, threads=%ld cores=%ld cutoff=%ld maxlevel=%ld\n",
+          terms, depth, threads, cores, cutoff, maxlevel);
+
+  // omp_set_num_threads(threads);
   if (threads < 1)
   {
         fprintf(stderr, "Number of threads reset from %ld to 1\n", threads); 
@@ -539,9 +547,6 @@ main(int argc, char *argv[])
 	threads = terms;
   }
 
-  fprintf(stderr, "#terms=%ld, depth=%ld, threads=%ld cores=%ld cutoff=%ld\n", terms, depth, threads, cores, cutoff);
-
-  omp_set_num_threads(threads);
 
   mid0 = begin = cpu_time();
   wmid0 = wbegin = wall_clock();

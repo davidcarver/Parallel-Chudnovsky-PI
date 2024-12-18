@@ -14,13 +14,13 @@
    ideas Mario Roy implementation at https://github.com/marioroy/Chudnovsky-Pi. 
 
    To compile:
-   gcc -Wall -fopenmp -O2 -o raspberry-pi raspberry-pi.c -lgmp -lm
- 
+   gcc -Wall -fopenmp -O2 -o pgmp-chudnovsky pgmp-chudnovsky.c -lgmp -lm
+
    To run:
-   ./raspberry-pi 1000 1
+   ./pgmp-chudnovsky 1000 1
 
    To get help run the program with no options:
-   ./raspberry-pi
+   ./pgmp-chudnovsky
 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -118,7 +118,7 @@ void sum(mpz_t pstack1, mpz_t qstack1, mpz_t gstack1,
      mpz_mul(gstack1, gstack1, gstack2);
 }
 
-void bs(unsigned long a, unsigned long b, long gflag, long level, 
+void bs(unsigned long a, unsigned long b, unsigned long gflag, unsigned long level, 
      mpz_t pstack1, mpz_t qstack1, mpz_t gstack1)
 {
   unsigned long mid;
@@ -156,6 +156,7 @@ void bs(unsigned long a, unsigned long b, long gflag, long level,
       mpz_neg(qstack1, qstack1);
 
   } else {
+
     mpz_t pstack2, qstack2, gstack2;
 
     mpz_init(pstack2);
@@ -176,11 +177,12 @@ void bs(unsigned long a, unsigned long b, long gflag, long level,
     mpz_mul(pstack1, pstack1, pstack2);
     mpz_mul(qstack1, qstack1, pstack2);
     mpz_mul(qstack2, qstack2, gstack1);
-
     mpz_add(qstack1, qstack1, qstack2);
 
     if (gflag)
+    {
       mpz_mul(gstack1, gstack1, gstack2);
+    }
 
     mpz_clear(pstack2);
     mpz_clear(qstack2);
@@ -242,6 +244,7 @@ main(int argc, char *argv[])
         fflush(stderr);
 	threads = terms;
   }
+
   cores_depth = 0;
   while ((1L<<cores_depth)<threads)
     cores_depth++;
@@ -251,10 +254,10 @@ main(int argc, char *argv[])
 
   fprintf(stderr, "#terms=%ld, depth=%ld, threads=%ld cores=%ld cutoff=%ld\n", terms, depth, threads, cores, cutoff);
 
-  /* allocate stacks */
+  mid0 = begin = cpu_time();
+  wmid0 = wbegin = wall_clock();
 
-  begin = mid0 = cpu_time();
-  wbegin = wmid0 = wall_clock();
+  /* allocate stacks */
 
   pstack = malloc(sizeof(mpz_t)*threads);
   qstack = malloc(sizeof(mpz_t)*threads);
@@ -292,7 +295,7 @@ main(int argc, char *argv[])
       if (i < (threads-1))
          bs(i*mid, (i+1)*mid, 1, 0, pstack[i], qstack[i], gstack[i]);
       else
-         bs(i*mid, terms, 1, 1, pstack[i], qstack[i], gstack[i]);
+         bs(i*mid, terms, 1, 0, pstack[i], qstack[i], gstack[i]);
     }
 
     mid1 = cpu_time();
@@ -304,19 +307,23 @@ main(int argc, char *argv[])
     mid0 = cpu_time();
     wmid0 = wall_clock();
 
-    for (k = 1; k < cores_size; k*=2) 
+    #pragma omp parallel private(k, i) num_threads(threads/2)
     {
-#pragma omp parallel for default(shared) private(i) num_threads(threads)
-      for (i = 0; i < threads; i=i+2*k)
+      for (k = 1; k < cores_size; k*=2) 
       {
-        if (i+k < threads)
+        #pragma omp for schedule(static,1)
+        for (i = 0; i < threads; i=i+2*k)
         {
-          long gflag = (i+2*k < threads) ? 1 : 0;
-          sum(pstack[i], qstack[i], gstack[i], pstack[i+k], qstack[i+k], gstack[i+k], gflag);
-          mpz_clear(pstack[i+k]);
-          mpz_clear(qstack[i+k]);
-          mpz_clear(gstack[i+k]);
+          if (i+k < threads)
+          {
+            long gflag = (i+2*k < threads) ? 1 : 0;
+            sum(pstack[i], qstack[i], gstack[i], pstack[i+k], qstack[i+k], gstack[i+k], gflag);
+            mpz_clear(pstack[i+k]);
+            mpz_clear(qstack[i+k]);
+            mpz_clear(gstack[i+k]);
+          }
         }
+        #pragma omp barrier
       }
     }
     mpz_clear(gstack[0]);
@@ -327,7 +334,6 @@ main(int argc, char *argv[])
   fprintf(stderr, "sum        cputime = %6.2f  wallclock = %6.2f   factor = %6.2f\n",
     (mid1-mid0), (wmid1-wmid0), (mid1-mid0)/(wmid1-wmid0));
   fflush(stderr);
-
 
   /* prepare to convert integers to floats */
 
