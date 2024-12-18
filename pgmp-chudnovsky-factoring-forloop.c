@@ -5,9 +5,9 @@
  * Slightly modified 2005 by Torbjorn Granlund (tege at swox dot com) to allow
    more than 2G digits to be computed.
 
- * Modifed 2008, 2020 by David Carver (dcarver at tacc dot utexas dot edu) to enable
+ * Modifed 2008, 2024 by David Carver (dcarver at tacc dot utexas dot edu) to enable
    multi-threading using the algorithm from "Fast multiprecision evaluation of series of 
-   rational numbers" by Bruno Haible Thomas Papanikolaou; and "Computation of High-Precision 
+   rational numbers" by Bruno Haible and Thomas Papanikolaou; and "Computation of High-Precision 
    Mathematical Constants in a Combined Cluster and Grid Environment" by 
    Daisuke Takahashi, Mitsuhisa Sato, and Taisuke Boku.
 
