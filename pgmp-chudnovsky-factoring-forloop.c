@@ -621,19 +621,23 @@ main(int argc, char *argv[])
     mid0 = cpu_time();
     wmid0 = wall_clock();
 
-    for (k = 1; k < cores_size; k*=2) 
+    #pragma omp parallel private(k, i) num_threads(threads/2)
     {
-#pragma omp parallel for default(shared) private(i) num_threads(threads)
-      for (i = 0; i < threads; i=i+2*k)
+      for (k = 1; k < cores_size; k*=2) 
       {
-        if (i+k < threads)
+        #pragma omp for schedule(static,1)
+        for (i = 0; i < threads; i=i+2*k)
         {
-          long gflag = (i+2*k < threads) ? 1 : 0;
-          sum(pstack[i], qstack[i], gstack[i], pstack[i+k], qstack[i+k], gstack[i+k], gflag);
-          mpz_clear(pstack[i+k]);
-          mpz_clear(qstack[i+k]);
-          mpz_clear(gstack[i+k]);
+          if (i+k < threads)
+          {
+            long gflag = (i+2*k < threads) ? 1 : 0;
+            sum(pstack[i], qstack[i], gstack[i], pstack[i+k], qstack[i+k], gstack[i+k], gflag);
+            mpz_clear(pstack[i+k]);
+            mpz_clear(qstack[i+k]);
+            mpz_clear(gstack[i+k]);
+          }
         }
+        #pragma omp barrier
       }
     }
     mpz_clear(gstack[0]);

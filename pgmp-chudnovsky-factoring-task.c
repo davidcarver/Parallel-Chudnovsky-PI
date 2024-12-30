@@ -5,10 +5,19 @@
  * Slightly modified 2005 by Torbjorn Granlund (tege at swox dot com) to allow
    more than 2G digits to be computed.
 
- * Modified 2010, 2020 by David Carver (dcarver at tacc dot utexas dot edu) to 
-   demonstrate a parallel and fully recursive version of the gmp-chudnovsky; 
-   to simpilfy OpenMP and improve performance; and incorperate some excellent
-   ideas Mario Roy implementation at https://github.com/marioroy/Chudnovsky-Pi. 
+ * Modifed 2008 by David Carver (dcarver at tacc dot utexas dot edu) to enable
+   multi-threading using the algorithm from "Fast multiprecision evaluation of series of 
+   rational numbers" by Bruno Haible and Thomas Papanikolaou; and "Computation of High-Precision 
+   Mathematical Constants in a Combined Cluster and Grid Environment" by 
+   Daisuke Takahashi, Mitsuhisa Sato, and Taisuke Boku.
+
+ * Modified 2010, 2024 to demonstrate a fully recursive binary splitting version using ideas 
+   from "10 Trillion Digits of Pi: A Case Study of summing Hypergeometric Series to high
+   precision on Multicore Systems" by Yee and Kondo at 
+   https://www.ideals.illinois.edu/items/28571/bitstreams/96266/data.pdf.
+   Also, simplified OpenMP and improve performance incorperating excellent ideas for nested 
+   parallelism from Mario Roy implementation at 
+   https://github.com/marioroy/Chudnovsky-Pi.
 
    To compile:
    gcc -Wall -fopenmp -O2 -o pgmp-chudnovsky pgmp-chudnovsky.c -lgmp -lm
@@ -356,7 +365,7 @@ build_sieve(long n, sieve_t *s)
 /* binary splitting */
 
 void
-bs(unsigned long a, unsigned long b, long gflag, long level, 
+bs(unsigned long a, unsigned long b, long gflag, long threads, long level, 
    mpz_t pstack1, mpz_t qstack1, mpz_t gstack1, fac_t fpstack1, fac_t fgstack1)
 {
   unsigned long mid;
@@ -423,20 +432,20 @@ bs(unsigned long a, unsigned long b, long gflag, long level,
 
     mid = a+(b-a)*0.5224;     /* tuning parameter */
 
-    if ((b-a) < cutoff)
+    if (((b-a) < cutoff) || (threads < 1))
     {
-      bs(a, mid, 1, level+1, pstack1, qstack1, gstack1, fpstack1, fgstack1);
-      bs(mid, b, gflag, level+1, pstack2, qstack2, gstack2, fpstack2, fgstack2);
+      bs(a, mid, 1, threads/2, level+1, pstack1, qstack1, gstack1, fpstack1, fgstack1);
+      bs(mid, b, gflag, threads/2, level+1, pstack2, qstack2, gstack2, fpstack2, fgstack2);
     } else {
       #pragma omp parallel num_threads(2)
       {
         #pragma omp single nowait
         {
-          #pragma omp task shared(pstack1, qstack1, gstack1)
-            bs(a, mid, 1, level+1, pstack1, qstack1, gstack1, fpstack1, fgstack1);
+          #pragma omp task default(none) shared(a, mid, threads, level, pstack1, qstack1, gstack1, fpstack1, fgstack1)
+            bs(a, mid, 1, threads/2, level+1, pstack1, qstack1, gstack1, fpstack1, fgstack1);
 
-          #pragma omp task shared(pstack2, qstack2, gstack2)
-            bs(mid, b, gflag, level+1, pstack2, qstack2, gstack2, fpstack2, fgstack2);
+          #pragma omp task default(none) shared(mid, b, gflag, threads, level, pstack2, qstack2, gstack2, fpstack2, fgstack2)
+            bs(mid, b, gflag, threads/2, level+1, pstack2, qstack2, gstack2, fpstack2, fgstack2);
           #pragma omp taskwait 
         }
       }
@@ -446,7 +455,7 @@ bs(unsigned long a, unsigned long b, long gflag, long level,
       fac_remove_gcd(pstack2, fpstack2, gstack1, fgstack1);
     }
 
-    if ((b-a) < cutoff)
+    if (((b-a) < cutoff) || (threads < 3))
     {
        mpz_mul(pstack1, pstack1, pstack2);
        mpz_mul(qstack1, qstack1, pstack2);
@@ -456,13 +465,13 @@ bs(unsigned long a, unsigned long b, long gflag, long level,
        {
          #pragma omp single nowait
          {
-           #pragma omp task shared(pstack1, pstack2)
+           #pragma omp task default(none) shared(pstack1, pstack2)
              mpz_mul(pstack1, pstack1, pstack2);
 
-           #pragma omp task shared(qstack1, pstack2)
+           #pragma omp task default(none) shared(qstack1, pstack2)
              mpz_mul(qstack1, qstack1, pstack2);
 
-           #pragma omp task shared(qstack2, gstack1)
+           #pragma omp task default(none) shared(qstack2, gstack1)
              mpz_mul(qstack2, qstack2, gstack1);
 
            #pragma omp taskwait 
@@ -526,6 +535,10 @@ main(int argc, char *argv[])
     depth++;
   depth++;
 
+  fprintf(stderr, "#terms=%ld, depth=%ld, threads=%ld cores=%ld cutoff=%ld\n",
+          terms, depth, threads, cores, cutoff);
+
+  // omp_set_num_threads(threads);
   if (threads < 1)
   {
         fprintf(stderr, "Number of threads reset from %ld to 1\n", threads); 
@@ -539,9 +552,6 @@ main(int argc, char *argv[])
 	threads = terms;
   }
 
-  fprintf(stderr, "#terms=%ld, depth=%ld, threads=%ld cores=%ld cutoff=%ld\n", terms, depth, threads, cores, cutoff);
-
-  omp_set_num_threads(threads);
 
   mid0 = begin = cpu_time();
   wmid0 = wbegin = wall_clock();
@@ -571,7 +581,7 @@ main(int argc, char *argv[])
     mpz_set_ui(qstack, 0);
     mpz_set_ui(gstack, 1);
   } else {
-    bs(0, terms, 0, 0, pstack, qstack, gstack, fpstack, fgstack);
+    bs(0, terms, 0, threads, 0, pstack, qstack, gstack, fpstack, fgstack);
   }
 
   mpz_clear(gstack);
@@ -624,10 +634,10 @@ main(int argc, char *argv[])
     {
       #pragma omp single nowait
       {
-        #pragma omp task shared(pi, qi)
+        #pragma omp task default(none) shared(pi, qi)
           mpf_div(qi, pi, qi);
 
-        #pragma omp task shared(ci)
+        #pragma omp task default(none) shared(ci)
           mpf_sqrt_ui(ci, C);
 
         #pragma omp taskwait 
