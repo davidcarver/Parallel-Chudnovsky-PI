@@ -437,12 +437,18 @@ bs(unsigned long a, unsigned long b, long gflag, long threads, long level,
       bs(a, mid, 1, threads/2, level+1, pstack1, qstack1, gstack1, fpstack1, fgstack1);
       bs(mid, b, gflag, threads/2, level+1, pstack2, qstack2, gstack2, fpstack2, fgstack2);
     } else {
+      #pragma omp parallel num_threads(2)
+      {
+        #pragma omp single nowait
+        {
           #pragma omp task default(none) shared(a, mid, threads, level, pstack1, qstack1, gstack1, fpstack1, fgstack1)
             bs(a, mid, 1, threads/2, level+1, pstack1, qstack1, gstack1, fpstack1, fgstack1);
 
           #pragma omp task default(none) shared(mid, b, gflag, threads, level, pstack2, qstack2, gstack2, fpstack2, fgstack2)
             bs(mid, b, gflag, threads/2, level+1, pstack2, qstack2, gstack2, fpstack2, fgstack2);
           #pragma omp taskwait 
+        }
+      }
     }
 
     if (level>=4) {           // tuning parameter
@@ -455,22 +461,22 @@ bs(unsigned long a, unsigned long b, long gflag, long threads, long level,
        mpz_mul(qstack1, qstack1, pstack2);
        mpz_mul(qstack2, qstack2, gstack1);
     } else {
-      #pragma omp parallel num_threads(3)
-      {
-        #pragma omp single nowait
-        {
-          #pragma omp task default(none) shared(pstack1, pstack2)
-            mpz_mul(pstack1, pstack1, pstack2);
+       #pragma omp parallel num_threads(3)
+       {
+         #pragma omp single nowait
+         {
+           #pragma omp task default(none) shared(pstack1, pstack2)
+             mpz_mul(pstack1, pstack1, pstack2);
 
-          #pragma omp task default(none) shared(qstack1, pstack2)
-            mpz_mul(qstack1, qstack1, pstack2);
+           #pragma omp task default(none) shared(qstack1, pstack2)
+             mpz_mul(qstack1, qstack1, pstack2);
 
-          #pragma omp task default(none) shared(qstack2, gstack1)
-            mpz_mul(qstack2, qstack2, gstack1);
+           #pragma omp task default(none) shared(qstack2, gstack1)
+             mpz_mul(qstack2, qstack2, gstack1);
 
-          #pragma omp taskwait 
-        }
-      }
+           #pragma omp taskwait 
+         }
+       }
     }
 
     mpz_clear(pstack2);
@@ -575,13 +581,7 @@ main(int argc, char *argv[])
     mpz_set_ui(qstack, 0);
     mpz_set_ui(gstack, 1);
   } else {
-    #pragma omp parallel num_threads(threads)
-    {
-      #pragma omp single nowait
-      {
-        bs(0, terms, 0, threads, 0, pstack, qstack, gstack, fpstack, fgstack);
-      }
-    }
+    bs(0, terms, 0, threads, 0, pstack, qstack, gstack, fpstack, fgstack);
   }
 
   mpz_clear(gstack);
