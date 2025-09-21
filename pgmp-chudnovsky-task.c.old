@@ -6,24 +6,18 @@
    more than 2G digits to be computed.
 
  * Modifed 2008 by David Carver (dcarver at tacc dot utexas dot edu) to enable
-   multi-threading using the algorithm from "Fast multiprecision evaluation of series of
-   rational numbers" by Bruno Haible and Thomas Papanikolaou; and "Computation of High-Precision
-   Mathematical Constants in a Combined Cluster and Grid Environment" by
+   multi-threading using the algorithm from "Fast multiprecision evaluation of series of 
+   rational numbers" by Bruno Haible and Thomas Papanikolaou; and "Computation of High-Precision 
+   Mathematical Constants in a Combined Cluster and Grid Environment" by 
    Daisuke Takahashi, Mitsuhisa Sato, and Taisuke Boku.
 
- * Modified 2010, 2024 to demonstrate a fully recursive binary splitting version using ideas
+ * Modified 2010, 2024 to demonstrate a fully recursive binary splitting version using ideas 
    from "10 Trillion Digits of Pi: A Case Study of summing Hypergeometric Series to high
-   precision on Multicore Systems" by Yee and Kondo at
+   precision on Multicore Systems" by Yee and Kondo at 
    https://www.ideals.illinois.edu/items/28571/bitstreams/96266/data.pdf.
-   
-   Also, simplified OpenMP and improve performance incorperating excellent ideas for nested
-   parallelism from Mario Roy implementation at
+   Also, simplified OpenMP and improve performance incorperating excellent ideas for nested 
+   parallelism from Mario Roy implementation at 
    https://github.com/marioroy/Chudnovsky-Pi.
- 
-*  2025 Improvements by AI assistant:
-   - precompute C^3 as mpz_t to avoid overflow / repeated big-int work
-   - correct p(b-1,b) computation: p = b^3 * C^3 / 24
-   - simplified mid = (a+b)/2, safer and easier to tune externally
 
    To compile:
    gcc -Wall -fopenmp -O2 -o pgmp-chudnovsky pgmp-chudnovsky.c -lgmp -lm
@@ -58,14 +52,13 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/sysinfo.h>
 #include <string.h>
 #include <time.h>
-#include <sys/time.h>
 #include <sys/resource.h>
-#include <sys/sysinfo.h>
+#include <sys/time.h>
 #include <gmp.h>
 #include <omp.h>
-#include <unistd.h>
 
 #define A   13591409
 #define B   545140134
@@ -78,11 +71,10 @@
 
 char *prog_name;
 long d=100, out=0, cutoff=1000, threads=1;
-mpz_t c3d24;
 
 ////////////////////////////////////////////////////////////////////////////
 
-/* https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fblog.habets.se%2F2010%2F09%2Fgettimeofday-should-never-be-used-to-measure-time.html&data=05%7C02%7C%7C2906fc8f2bc94fc9b5ff08ddf9377428%7C31d7e2a5bdd8414e9e97bea998ebdfe1%7C0%7C0%7C638940738772330075%7CUnknown%7CTWFpbGZsb3d8eyJFbXB0eU1hcGkiOnRydWUsIlYiOiIwLjAuMDAwMCIsIlAiOiJXaW4zMiIsIkFOIjoiTWFpbCIsIldUIjoyfQ%3D%3D%7C40000%7C%7C%7C&sdata=tX8fTmiuW1bf3lynF9mLVppWJKY2T%2FA3xzI622UJuqw%3D&reserved=0 */
+/* https://blog.habets.se/2010/09/gettimeofday-should-never-be-used-to-measure-time.html */
 
 double wall_clock()
 {
@@ -97,7 +89,7 @@ double cpu_time()
 {
   struct rusage rusage;
 
-  (void) getrusage( RUSAGE_SELF, &rusage);
+  (void) getrusage( RUSAGE_SELF, &rusage );
   return (double)rusage.ru_utime.tv_sec +
          (double)rusage.ru_utime.tv_usec / 1000000.0;
 }
@@ -106,18 +98,19 @@ double cpu_time()
 
 /* binary splitting */
 
-void bs(long a, long b, long gflag, long threads, long level,
+void
+bs(unsigned long a, unsigned long b, long gflag, long threads, long level, 
    mpz_t pstack1, mpz_t qstack1, mpz_t gstack1)
 {
-  long mid;
+  unsigned long mid;
 
-  if (out & 2)
+  if (out&2)
   {
     fprintf(stderr, "bs: a = %ld b = %ld gflag = %ld \n", a, b, gflag);
     fflush(stderr);
   }
 
-  if ((b > a) && ((b - a) == 1))
+  if ((b > a) && ((b-a) == 1))
   {
 
     /*
@@ -129,17 +122,18 @@ void bs(long a, long b, long gflag, long threads, long level,
     mpz_set_ui(pstack1, b);
     mpz_mul_ui(pstack1, pstack1, b);
     mpz_mul_ui(pstack1, pstack1, b);
-    mpz_mul(pstack1, pstack1, c3d24);
+    mpz_mul_ui(pstack1, pstack1, (C/24)*(C/24));
+    mpz_mul_ui(pstack1, pstack1, C*24);
 
-    mpz_set_ui(gstack1, 2 * b - 1);
-    mpz_mul_ui(gstack1, gstack1, 6 * b - 1);
-    mpz_mul_ui(gstack1, gstack1, 6 * b - 5);
+    mpz_set_ui(gstack1, 2*b-1);
+    mpz_mul_ui(gstack1, gstack1, 6*b-1);
+    mpz_mul_ui(gstack1, gstack1, 6*b-5);
 
     mpz_set_ui(qstack1, b);
     mpz_mul_ui(qstack1, qstack1, B);
     mpz_add_ui(qstack1, qstack1, A);
     mpz_mul(qstack1, qstack1, gstack1);
-    if (b % 2)
+    if (b%2)
       mpz_neg(qstack1, qstack1);
 
   } else {
@@ -156,9 +150,9 @@ void bs(long a, long b, long gflag, long threads, long level,
       q(a,b) = q(a,m) * p(m,b) + q(m,b) * g(a,m)
     */
 
-    mid = a + (b - a) / 2;     /* tuning parameter */
+    mid = a+(b-a)*0.5224;     /* tuning parameter */
 
-    if (((b - a) < cutoff) || (threads <= 1))
+    if (((b-a) < cutoff) || (threads < 1))
     {
       bs(a, mid, 1, threads/2, level+1, pstack1, qstack1, gstack1);
       bs(mid, b, gflag, threads/2, level+1, pstack2, qstack2, gstack2);
@@ -168,17 +162,16 @@ void bs(long a, long b, long gflag, long threads, long level,
         #pragma omp single nowait
         {
           #pragma omp task default(none) shared(a, mid, threads, level, pstack1, qstack1, gstack1)
-          bs(a, mid, 1, threads/2, level+1, pstack1, qstack1, gstack1);
+            bs(a, mid, 1, threads/2, level+1, pstack1, qstack1, gstack1);
 
           #pragma omp task default(none) shared(mid, b, gflag, threads, level, pstack2, qstack2, gstack2)
-          bs(mid, b, gflag, threads/2, level+1, pstack2, qstack2, gstack2);
-
-          #pragma omp taskwait
+            bs(mid, b, gflag, threads/2, level+1, pstack2, qstack2, gstack2);
+          #pragma omp taskwait 
         }
       }
     }
 
-    if (((b - a) < cutoff) || (threads < 3))
+    if (((b-a) < cutoff) || (threads < 3))
     {
        mpz_mul(pstack1, pstack1, pstack2);
        mpz_mul(qstack1, qstack1, pstack2);
@@ -189,15 +182,15 @@ void bs(long a, long b, long gflag, long threads, long level,
          #pragma omp single nowait
          {
            #pragma omp task default(none) shared(pstack1, pstack2)
-           mpz_mul(pstack1, pstack1, pstack2);
+             mpz_mul(pstack1, pstack1, pstack2);
 
            #pragma omp task default(none) shared(qstack1, pstack2)
-           mpz_mul(qstack1, qstack1, pstack2);
+             mpz_mul(qstack1, qstack1, pstack2);
 
            #pragma omp task default(none) shared(qstack2, gstack1)
-           mpz_mul(qstack2, qstack2, gstack1);
+             mpz_mul(qstack2, qstack2, gstack1);
 
-           #pragma omp taskwait
+           #pragma omp taskwait 
          }
        }
     }
@@ -205,7 +198,7 @@ void bs(long a, long b, long gflag, long threads, long level,
     mpz_clear(pstack2);
     if (gflag)
     {
-        mpz_mul(gstack1, gstack1, gstack2);
+      mpz_mul(gstack1, gstack1, gstack2);
     }
     mpz_clear(gstack2);
     mpz_add(qstack1, qstack1, qstack2);
@@ -213,17 +206,18 @@ void bs(long a, long b, long gflag, long threads, long level,
   }
 }
 
-int main(int argc, char *argv[])
+int
+main(int argc, char *argv[])
 {
   mpz_t pstack, qstack, gstack;
   mpf_t pi, qi, ci;
-  long terms, psize, qsize, cores;
+  long terms, depth, psize, qsize, cores;
   double begin, mid0, mid1, end;
   double wbegin, wmid0, wmid1, wend;
 
   prog_name = argv[0];
 
-  if (argc == 1)
+  if (argc==1)
   {
     fprintf(stderr, "\nSyntax: %s <digits> <option> <threads>\n", prog_name);
     fprintf(stderr, "      <digits> digits of pi to output\n");
@@ -234,24 +228,42 @@ int main(int argc, char *argv[])
     fprintf(stderr, "      <cutoff> cutoff for recursion (default 1000)\n");
     exit(1);
   }
-  if (argc > 1) d = strtoul(argv[1], 0, 0);
-  if (argc > 2) out = atoi(argv[2]);
-  if (argc > 3) threads = atoi(argv[3]);
-  if (argc > 4) cutoff = atoi(argv[4]);
+  if (argc>1)
+    d = strtoul(argv[1], 0, 0);
+  if (argc>2)
+    out = atoi(argv[2]);
+  if (argc>3)
+    threads = atoi(argv[3]);
+  if (argc>4)
+    cutoff = atoi(argv[4]);
 
-  cores = omp_get_num_procs();
+  cores=omp_get_num_procs();
   omp_set_nested(1);
   omp_set_dynamic(0);
 
-  /* ensure threads does not exceed useful limit */
-  if (threads <= 0) threads = 1;
-  if (threads > cores) threads = cores;
+  terms = d/DIGITS_PER_ITER;
+  depth = 0;
+  while ((1L<<depth)<terms)
+    depth++;
+  depth++;
 
-  terms = d / DIGITS_PER_ITER;
-  if (terms < 1) terms = 1;
+  fprintf(stderr, "#terms=%ld, depth=%ld, threads=%ld cores=%ld cutoff=%ld\n",
+          terms, depth, threads, cores, cutoff);
 
-  fprintf(stderr, "#terms=%ld, threads=%ld cores=%ld cutoff=%ld\n",
-          terms, threads, cores, cutoff);
+  // omp_set_num_threads(threads);
+  if (threads < 1)
+  {
+        fprintf(stderr, "Number of threads reset from %ld to 1\n", threads); 
+        fflush(stderr);
+	threads = 1;
+  }
+  if (terms > 0 && terms < threads && threads <= cores)
+  {
+        fprintf(stderr, "Number of threads reset from %ld to %ld\n", threads, terms); 
+        fflush(stderr);
+	threads = terms;
+  }
+
 
   mid0 = begin = cpu_time();
   wmid0 = wbegin = wall_clock();
@@ -260,17 +272,9 @@ int main(int argc, char *argv[])
   mpz_init(qstack);
   mpz_init(gstack);
 
-  /* precompute C^3/24 into global c3d24 */
-  mpz_init(c3d24);
-  mpz_set_ui(c3d24, C);
-  mpz_mul_ui(c3d24, c3d24, C);  /* C^2 */
-  mpz_mul_ui(c3d24, c3d24, C);  /* C^3 */
-  /* divide by 24 exactly (integer division exact by construction) */
-  mpz_divexact_ui(c3d24, c3d24, 24);
-
   /* begin binary splitting process */
 
-  if (terms <= 0)
+  if (terms<=0)
   {
     mpz_set_ui(pstack, 1);
     mpz_set_ui(qstack, 0);
@@ -287,22 +291,21 @@ int main(int argc, char *argv[])
     (mid1-mid0), (wmid1-wmid0), (mid1-mid0)/(wmid1-wmid0));
   fflush(stderr);
 
+  /* prepare to convert integers to floats */
+
+  mpf_set_default_prec((long)(d*BITS_PER_DIGIT+16));
+
+  /*
+	  p*(C/D)*sqrt(C)
+    pi = -----------------
+	     (q+A*p)
+  */
+
   psize = mpz_sizeinbase(pstack, 10);
   qsize = mpz_sizeinbase(qstack, 10);
 
-  /* prepare to convert integers to floats */
-
-  mpf_set_default_prec(d * BITS_PER_DIGIT + 16);
-
-  /*
-          p*(C/D)*sqrt(C)
-    pi = -----------------
-             (q+A*p)
-  */
-
   mpz_addmul_ui(qstack, pstack, A);
-  mpz_mul_ui(pstack, pstack, C);
-  mpz_divexact_ui(pstack, pstack, D);
+  mpz_mul_ui(pstack, pstack, C/D);
 
   mpf_init(pi);
   mpf_set_z(pi, pstack);
@@ -312,13 +315,13 @@ int main(int argc, char *argv[])
   mpf_set_z(qi, qstack);
   mpz_clear(qstack);
 
+  /* final step */
+
   mid0 = cpu_time();
   wmid0 = wall_clock();
 
-  /* divide & sqrt concurrently if more than 1 thread allowed */
-
   mpf_init(ci);
-  if (threads < 2)
+  if (threads < 2 )
   {
     mpf_div(qi, pi, qi);
     mpf_sqrt_ui(ci, C);
@@ -328,12 +331,12 @@ int main(int argc, char *argv[])
       #pragma omp single nowait
       {
         #pragma omp task default(none) shared(pi, qi)
-        mpf_div(qi, pi, qi);
+          mpf_div(qi, pi, qi);
 
         #pragma omp task default(none) shared(ci)
-        mpf_sqrt_ui(ci, C);
+          mpf_sqrt_ui(ci, C);
 
-        #pragma omp taskwait
+        #pragma omp taskwait 
       }
     }
   }
@@ -364,11 +367,11 @@ int main(int argc, char *argv[])
   /* output Pi and timing statistics */
 
   fprintf(stderr, "   P size=%ld digits (%f)\n"
-         "   Q size=%ld digits (%f)\n",
-         psize, (double)psize/d, qsize, (double)qsize/d);
+	 "   Q size=%ld digits (%f)\n",
+	 psize, (double)psize/d, qsize, (double)qsize/d);
   fflush(stderr);
 
-  if (out & 1)
+  if (out&1)
   {
     fprintf(stdout, "pi(0,%ld)=\n", terms);
     mpf_out_str(stdout, 10, d, pi);
@@ -379,6 +382,6 @@ int main(int argc, char *argv[])
   /* free float resources */
 
   mpf_clear(pi);
-  mpz_clear(c3d24);
 
   exit (0);
+}
