@@ -16,22 +16,28 @@
    precision on Multicore Systems" by Yee and Kondo at
    https://www.ideals.illinois.edu/items/28571/bitstreams/96266/data.pdf.
    
-   Also, simplified OpenMP and improve performance incorperating excellent ideas for nested
+ * Also, simplified OpenMP and improve performance incorperating excellent ideas for nested
    parallelism from Mario Roy implementation at
    https://github.com/marioroy/Chudnovsky-Pi.
  
-*  2025 Improvements by AI assistant:
-   - precompute C^3 as mpz_t to avoid overflow / repeated big-int work
-   - correct p(b-1,b) computation: p = b^3 * C^3 / 24
-   - simplified mid = (a+b)/2, safer and easier to tune externally
+ * 2025 Improvements by AI assistant:
+   - Precompute C^3 as mpz_t to avoid overflow / repeated big-int work
+   - Correct p(b-1,b) computation: p = b^3 * C^3 / 24
+   - Simplified mid = (a+b)/2, safer and easier to tune externally
 
-   To compile:
-   gcc -Wall -fopenmp -O2 -o pgmp-chudnovsky pgmp-chudnovsky.c -lgmp -lm
+ * To compile:
+   gcc -Wall -fopenmp -O3 -o pgmp-chudnovsky pgmp-chudnovsky.c -lgmp -lm
 
-   To run:
-   ./pgmp-chudnovsky 1000 1
+ * To run:
+   ./pgmp-chudnovsky 1000 1 4 100
+                     ^    ^ ^   ^
+                     |    | |   |
+                     |    | |   cutoff
+                     |    | threads
+                     |    output
+                     digits
 
-   To get help run the program with no options:
+ * To get help run the program with no options:
    ./pgmp-chudnovsky
 
  * Redistribution and use in source and binary forms, with or without
@@ -74,15 +80,14 @@
 
 #define BITS_PER_DIGIT   3.32192809488736234787
 #define DIGITS_PER_ITER  14.1816474627254776555
-#define DOUBLE_PREC      53
 
 char *prog_name;
-long d=100, out=0, cutoff=1000, threads=1;
+long d=100, out=0, cutoff=1024, threads=1;
 mpz_t c3d24;
 
 ////////////////////////////////////////////////////////////////////////////
 
-/* https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fblog.habets.se%2F2010%2F09%2Fgettimeofday-should-never-be-used-to-measure-time.html&data=05%7C02%7C%7C2906fc8f2bc94fc9b5ff08ddf9377428%7C31d7e2a5bdd8414e9e97bea998ebdfe1%7C0%7C0%7C638940738772330075%7CUnknown%7CTWFpbGZsb3d8eyJFbXB0eU1hcGkiOnRydWUsIlYiOiIwLjAuMDAwMCIsIlAiOiJXaW4zMiIsIkFOIjoiTWFpbCIsIldUIjoyfQ%3D%3D%7C40000%7C%7C%7C&sdata=tX8fTmiuW1bf3lynF9mLVppWJKY2T%2FA3xzI622UJuqw%3D&reserved=0 */
+/* https://blog.habets.se/2010/09/gettimeofday-should-never-be-used-to-measure-time.html */
 
 double wall_clock()
 {
@@ -109,7 +114,7 @@ double cpu_time()
 void bs(long a, long b, long gflag, long threads, long level,
    mpz_t pstack1, mpz_t qstack1, mpz_t gstack1)
 {
-  long mid;
+  long range = b - a;
 
   if (out & 2)
   {
@@ -117,7 +122,7 @@ void bs(long a, long b, long gflag, long threads, long level,
     fflush(stderr);
   }
 
-  if ((b > a) && ((b - a) == 1))
+  if (range == 1)
   {
 
     /*
@@ -156,9 +161,9 @@ void bs(long a, long b, long gflag, long threads, long level,
       q(a,b) = q(a,m) * p(m,b) + q(m,b) * g(a,m)
     */
 
-    mid = a + (b - a) / 2;     /* tuning parameter */
+    long mid = a + range / 2;     /* tuning parameter */
 
-    if (((b - a) < cutoff) || (threads <= 1))
+    if ((range < cutoff) || (threads <= 1))
     {
       bs(a, mid, 1, threads/2, level+1, pstack1, qstack1, gstack1);
       bs(mid, b, gflag, threads/2, level+1, pstack2, qstack2, gstack2);
@@ -178,7 +183,7 @@ void bs(long a, long b, long gflag, long threads, long level,
       }
     }
 
-    if (((b - a) < cutoff) || (threads < 3))
+    if ((range < cutoff) || (threads < 3))
     {
        mpz_mul(pstack1, pstack1, pstack2);
        mpz_mul(qstack1, qstack1, pstack2);
@@ -204,9 +209,8 @@ void bs(long a, long b, long gflag, long threads, long level,
 
     mpz_clear(pstack2);
     if (gflag)
-    {
-        mpz_mul(gstack1, gstack1, gstack2);
-    }
+      mpz_mul(gstack1, gstack1, gstack2);
+
     mpz_clear(gstack2);
     mpz_add(qstack1, qstack1, qstack2);
     mpz_clear(qstack2);
@@ -234,24 +238,32 @@ int main(int argc, char *argv[])
     fprintf(stderr, "      <cutoff> cutoff for recursion (default 1000)\n");
     exit(1);
   }
-  if (argc > 1) d = strtoul(argv[1], 0, 0);
-  if (argc > 2) out = atoi(argv[2]);
-  if (argc > 3) threads = atoi(argv[3]);
-  if (argc > 4) cutoff = atoi(argv[4]);
+
+  if (argc > 1)
+    d = strtoul(argv[1], 0, 0);
+  if (argc > 2)
+    out = atoi(argv[2]);
+  if (argc > 3)
+    threads = atoi(argv[3]);
+  if (argc > 4)
+    cutoff = atoi(argv[4]);
 
   cores = omp_get_num_procs();
   omp_set_nested(1);
   omp_set_dynamic(0);
 
   /* ensure threads does not exceed useful limit */
-  if (threads <= 0) threads = 1;
-  if (threads > cores) threads = cores;
+  if (threads <= 0)
+    threads = 1;
+  if (threads > cores)
+    threads = cores;
 
   terms = d / DIGITS_PER_ITER;
-  if (terms < 1) terms = 1;
+  if (terms < 1)
+    terms = 1;
 
   fprintf(stderr, "#terms=%ld, threads=%ld cores=%ld cutoff=%ld\n",
-          terms, threads, cores, cutoff);
+    terms, threads, cores, cutoff);
 
   mid0 = begin = cpu_time();
   wmid0 = wbegin = wall_clock();
@@ -263,9 +275,8 @@ int main(int argc, char *argv[])
   /* precompute C^3/24 into global c3d24 */
   mpz_init(c3d24);
   mpz_set_ui(c3d24, C);
-  mpz_mul_ui(c3d24, c3d24, C);  /* C^2 */
-  mpz_mul_ui(c3d24, c3d24, C);  /* C^3 */
-  /* divide by 24 exactly (integer division exact by construction) */
+  mpz_mul_ui(c3d24, c3d24, C);
+  mpz_mul_ui(c3d24, c3d24, C);
   mpz_divexact_ui(c3d24, c3d24, 24);
 
   /* begin binary splitting process */
@@ -284,7 +295,7 @@ int main(int argc, char *argv[])
   mid1 = cpu_time();
   wmid1 = wall_clock();
   fprintf(stderr, "bs         cputime = %6.2f  wallclock = %6.2f   factor = %6.2f\n",
-    (mid1-mid0), (wmid1-wmid0), (mid1-mid0)/(wmid1-wmid0));
+    (mid1 - mid0), (wmid1 - wmid0), (mid1 - mid0) / (wmid1 - wmid0));
   fflush(stderr);
 
   psize = mpz_sizeinbase(pstack, 10);
@@ -341,7 +352,7 @@ int main(int argc, char *argv[])
   mid1 = cpu_time();
   wmid1 = wall_clock();
   fprintf(stderr, "div/sqrt   cputime = %6.2f  wallclock = %6.2f   factor = %6.2f\n",
-    (mid1-mid0), (wmid1-wmid0), (mid1-mid0)/(wmid1-wmid0));
+    (mid1 - mid0), (wmid1 - wmid0), (mid1 - mid0) / (wmid1 - wmid0));
   fflush(stderr);
 
   mid0 = cpu_time();
@@ -354,11 +365,11 @@ int main(int argc, char *argv[])
   mid1 = end = cpu_time();
   wmid1 = wend = wall_clock();
   fprintf(stderr, "mul        cputime = %6.2f  wallclock = %6.2f   factor = %6.2f\n",
-    (mid1-mid0), (wmid1-wmid0), (mid1-mid0)/(wmid1-wmid0));
+    (mid1 - mid0), (wmid1 - wmid0), (mid1 - mid0) / (wmid1 - wmid0));
   fflush(stderr);
 
   fprintf(stderr, "total      cputime = %6.2f  wallclock = %6.2f   factor = %6.2f\n",
-    (end-begin), (wend-wbegin), (end-begin)/(wend-wbegin));
+    (end - begin), (wend - wbegin), (end - begin) / (wend - wbegin));
   fflush(stderr);
 
   /* output Pi and timing statistics */
@@ -382,3 +393,4 @@ int main(int argc, char *argv[])
   mpz_clear(c3d24);
 
   exit (0);
+}
