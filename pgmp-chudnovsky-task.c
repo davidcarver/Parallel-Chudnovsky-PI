@@ -73,10 +73,10 @@
 #include <omp.h>
 #include <unistd.h>
 
-#define A   13591409
-#define B   545140134
-#define C   640320
-#define D   12
+#define A   13591409UL
+#define B   545140134UL
+#define C   640320UL
+#define D   12UL
 
 #define BITS_PER_DIGIT   3.32192809488736234787
 #define DIGITS_PER_ITER  14.1816474627254776555
@@ -111,7 +111,7 @@ double cpu_time()
 
 /* binary splitting */
 
-void bs(long a, long b, long gflag, long threads, long level,
+void bs(unsigned long a, unsigned long b, long gflag, long threads, long level,
    mpz_t pstack1, mpz_t qstack1, mpz_t gstack1)
 {
   long range = b - a;
@@ -161,7 +161,7 @@ void bs(long a, long b, long gflag, long threads, long level,
       q(a,b) = q(a,m) * p(m,b) + q(m,b) * g(a,m)
     */
 
-    long mid = a + range / 2;     /* tuning parameter */
+    unsigned long mid = a + range / 2;     /* tuning parameter */
 
     if ((range < cutoff) || (threads <= 1))
     {

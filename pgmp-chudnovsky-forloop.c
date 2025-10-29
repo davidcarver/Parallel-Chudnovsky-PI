@@ -11,22 +11,33 @@
    Mathematical Constants in a Combined Cluster and Grid Environment" by
    Daisuke Takahashi, Mitsuhisa Sato, and Taisuke Boku.
 
-   Also, simplified OpenMP and improve performance incorperating excellent ideas for nested
+ * Modified 2010, 2024 to demonstrate a fully recursive binary splitting version using ideas
+   from "10 Trillion Digits of Pi: A Case Study of summing Hypergeometric Series to high
+   precision on Multicore Systems" by Yee and Kondo at
+   https://www.ideals.illinois.edu/items/28571/bitstreams/96266/data.pdf.
+   
+ * Also, simplified OpenMP and improve performance incorperating excellent ideas for nested
    parallelism from Mario Roy implementation at
    https://github.com/marioroy/Chudnovsky-Pi.
  
-*  2025 Improvements by AI assistant:
-   - precompute C^3 as mpz_t to avoid overflow / repeated big-int work
-   - correct p(b-1,b) computation: p = b^3 * C^3 / 24
-   - simplified mid = (a+b)/2, safer and easier to tune externally
+ * 2025 Improvements by AI assistant:
+   - Precompute C^3 as mpz_t to avoid overflow / repeated big-int work
+   - Correct p(b-1,b) computation: p = b^3 * C^3 / 24
+   - Simplified mid = (a+b)/2, safer and easier to tune externally
 
-   To compile:
-   gcc -Wall -fopenmp -O2 -o pgmp-chudnovsky pgmp-chudnovsky.c -lgmp -lm
+ * To compile:
+   gcc -Wall -fopenmp -O3 -o pgmp-chudnovsky pgmp-chudnovsky.c -lgmp -lm
 
-   To run:
-   ./pgmp-chudnovsky 1000 1
+ * To run:
+   ./pgmp-chudnovsky 1000 1 4
+                     ^    ^ ^
+                     |    | |
+                     |    | |
+                     |    | threads
+                     |    output
+                     digits
 
-   To get help run the program with no options:
+ * To get help run the program with no options:
    ./pgmp-chudnovsky
 
  * Redistribution and use in source and binary forms, with or without
@@ -62,17 +73,16 @@
 #include <omp.h>
 #include <unistd.h>
 
-#define A   13591409
-#define B   545140134
-#define C   640320
-#define D   12
+#define A   13591409UL
+#define B   545140134UL
+#define C   640320UL
+#define D   12UL
 
 #define BITS_PER_DIGIT   3.32192809488736234787
 #define DIGITS_PER_ITER  14.1816474627254776555
-#define DOUBLE_PREC      53
 
 char *prog_name;
-long d=100, out=0, cutoff=1024, threads=1;
+long d=100, out=0, threads=1;
 mpz_t c3d24;
 
 ////////////////////////////////////////////////////////////////////////////
@@ -127,10 +137,10 @@ void sum(mpz_t pstack1, mpz_t qstack1, mpz_t gstack1,
      mpz_mul(gstack1, gstack1, gstack2);
 }
 
-void bs(long a, long b, long gflag, long level,
+void bs(unsigned long a, unsigned long b, long gflag, long level,
      mpz_t pstack1, mpz_t qstack1, mpz_t gstack1)
 {
-  long mid;
+  long range = b - a;
 
   if (out & 2)
   {
@@ -138,7 +148,7 @@ void bs(long a, long b, long gflag, long level,
     fflush(stderr);
   }
 
-  if ((b > a) && ((b - a) == 1))
+  if (range == 1)
   {
 
     /*
@@ -177,7 +187,7 @@ void bs(long a, long b, long gflag, long level,
       q(a,b) = q(a,m) * p(m,b) + q(m,b) * g(a,m)
     */
 
-    mid = a + (b - a) / 2;     /* tuning parameter */
+    unsigned long mid = a + range / 2;     /* tuning parameter */
 
     bs(a, mid, 1, level+1, pstack1, qstack1, gstack1);
     bs(mid, b, gflag, level+1, pstack2, qstack2, gstack2);
@@ -188,9 +198,7 @@ void bs(long a, long b, long gflag, long level,
     mpz_add(qstack1, qstack1, qstack2);
 
     if (gflag)
-    {
       mpz_mul(gstack1, gstack1, gstack2);
-    }
 
     mpz_clear(pstack2);
     mpz_clear(qstack2);
@@ -217,21 +225,24 @@ int main(int argc, char *argv[])
     fprintf(stderr, "               1 - output decimal digits to stdout\n");
     fprintf(stderr, "               2 - debug\n");
     fprintf(stderr, "      <threads> number of threads (default 1)\n");
-    fprintf(stderr, "      <cutoff> cutoff for recursion (default 1000)\n");
     exit(1);
   }
-  if (argc > 1) d = strtoul(argv[1], 0, 0);
-  if (argc > 2) out = atoi(argv[2]);
-  if (argc > 3) threads = atoi(argv[3]);
-  if (argc > 4) cutoff = atoi(argv[4]);
+  if (argc > 1) 
+    d = strtoul(argv[1], 0, 0);
+  if (argc > 2)
+    out = atoi(argv[2]);
+  if (argc > 3)
+    threads = atoi(argv[3]);
 
   cores = omp_get_num_procs();
   omp_set_nested(1);
   omp_set_dynamic(0);
 
   /* ensure threads does not exceed useful limit */
-  if (threads <= 0) threads = 1;
-  if (threads > cores) threads = cores;
+  if (threads <= 0) 
+    threads = 1;
+  if (threads > cores)
+    threads = cores;
 
   terms = d/DIGITS_PER_ITER;
   depth = 0;
@@ -246,7 +257,7 @@ int main(int argc, char *argv[])
 
   omp_set_num_threads(threads);
 
-  fprintf(stderr, "#terms=%ld, depth=%ld, threads=%ld cores=%ld cutoff=%ld\n", terms, depth, threads, cores, cutoff);
+  fprintf(stderr, "#terms=%ld, depth=%ld, threads=%ld cores=%ld\n", terms, depth, threads, cores);
 
   mid0 = begin = cpu_time();
   wmid0 = wbegin = wall_clock();
@@ -290,7 +301,7 @@ int main(int argc, char *argv[])
 
     mid = terms / threads;
 
-#pragma omp parallel for default(shared) private(i) num_threads(threads)
+  #pragma omp parallel for default(shared) private(i) num_threads(threads)
     for (i = 0; i < threads; i++)
     {
       if (i < (threads-1))
@@ -302,7 +313,7 @@ int main(int argc, char *argv[])
     mid1 = cpu_time();
     wmid1 = wall_clock();
     fprintf(stderr, "bs         cputime = %6.2f  wallclock = %6.2f   factor = %6.2f\n",
-      (mid1 - mid0), (wmid1 - wmid0), (mid1 - mid0)/(wmid1 - wmid0));
+      (mid1 - mid0), (wmid1 - wmid0), (mid1 - mid0) / (wmid1 - wmid0));
     fflush(stderr);
 
     mid0 = cpu_time();
@@ -333,7 +344,7 @@ int main(int argc, char *argv[])
   mid1 = cpu_time();
   wmid1 = wall_clock();
   fprintf(stderr, "sum        cputime = %6.2f  wallclock = %6.2f   factor = %6.2f\n",
-    (mid1 - mid0), (wmid1 - wmid0), (mid1 - mid0)/(wmid1 - wmid0));
+    (mid1 - mid0), (wmid1 - wmid0), (mid1 - mid0) / (wmid1 - wmid0));
   fflush(stderr);
 
   /* prepare to convert integers to floats */
@@ -389,7 +400,7 @@ int main(int argc, char *argv[])
   mid1 = cpu_time();
   wmid1 = wall_clock();
   fprintf(stderr, "div/sqrt   cputime = %6.2f  wallclock = %6.2f   factor = %6.2f\n",
-    (mid1 - mid0), (wmid1 - wmid0), (mid1 - mid0)/(wmid1 - wmid0));
+    (mid1 - mid0), (wmid1 - wmid0), (mid1 - mid0) / (wmid1 - wmid0));
   fflush(stderr);
 
   mid0 = cpu_time();
@@ -402,11 +413,11 @@ int main(int argc, char *argv[])
   mid1 = end = cpu_time();
   wmid1 = wend = wall_clock();
   fprintf(stderr, "mul        cputime = %6.2f  wallclock = %6.2f   factor = %6.2f\n",
-    (mid1 - mid0), (wmid1 - wmid0), (mid1 - mid0)/(wmid1 - wmid0));
+    (mid1 - mid0), (wmid1 - wmid0), (mid1 - mid0) / (wmid1 - wmid0));
   fflush(stderr);
 
   fprintf(stderr, "total      cputime = %6.2f  wallclock = %6.2f   factor = %6.2f\n",
-    (end - begin), (wend - wbegin), (end - begin)/(wend - wbegin));
+    (end - begin), (wend - wbegin), (end - begin) / (wend - wbegin));
   fflush(stderr);
 
   /* output Pi and timing statistics */
